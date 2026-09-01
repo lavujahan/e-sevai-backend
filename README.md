@@ -46,6 +46,7 @@ All routes require the staff bearer key above.
 | `/api/templates/:docType` | GET / POST | Fetch/push a learned document template (versioned) |
 | `/api/form-mappings/:urlHash` | GET / POST | Fetch/push a learned form-field mapping (versioned) |
 | `/api/document-types` | GET | Active document types + their expected fields (admin-managed under More → Document Types) |
+| `/api/staff/me` | GET | Resolves the caller's real center/staff name + IDs from the bearer key alone (Android Staff Setup) |
 
 ## Deploying
 
