@@ -94,6 +94,26 @@ create table if not exists failure_log (
 create index if not exists failure_log_resolved_idx on failure_log(resolved);
 create index if not exists failure_log_created_at_idx on failure_log(created_at desc);
 
+-- Admin-managed catalog of document types staff can tag a scan as, and the fields the Android app
+-- should learn per type. Fetched by the Android app via GET /api/document-types and cached locally
+-- (Room) so staff can keep scanning offline between syncs.
+create table if not exists document_types (
+  type_key text primary key,
+  display_label text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists document_type_fields (
+  id uuid primary key default gen_random_uuid(),
+  type_key text not null references document_types(type_key) on delete cascade,
+  field_key text not null,
+  display_label text not null,
+  sort_order int not null default 0,
+  unique (type_key, field_key)
+);
+create index if not exists document_type_fields_type_key_idx on document_type_fields(type_key);
+
 -- Singleton row of admin-tunable settings (System Settings screen).
 create table if not exists app_settings (
   id int primary key default 1,
@@ -203,3 +223,5 @@ alter table form_mappings enable row level security;
 alter table ai_usage_log enable row level security;
 alter table failure_log enable row level security;
 alter table app_settings enable row level security;
+alter table document_types enable row level security;
+alter table document_type_fields enable row level security;

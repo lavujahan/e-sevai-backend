@@ -45,6 +45,7 @@ All routes require the staff bearer key above.
 | `/api/match` | POST | Server-side Groq call: form fields → citizen data key mapping |
 | `/api/templates/:docType` | GET / POST | Fetch/push a learned document template (versioned) |
 | `/api/form-mappings/:urlHash` | GET / POST | Fetch/push a learned form-field mapping (versioned) |
+| `/api/document-types` | GET | Active document types + their expected fields (admin-managed under More → Document Types) |
 
 ## Deploying
 
