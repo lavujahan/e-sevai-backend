@@ -54,8 +54,8 @@ export async function createDocumentType(formData: FormData) {
     if (insertFieldsError) throw new Error(insertFieldsError.message);
   }
 
-  revalidatePath("/admin/more/document-types");
-  redirect("/admin/more/document-types");
+  revalidatePath("/admin/document-types");
+  redirect("/admin/document-types");
 }
 
 export async function setDocumentTypeActive(typeKey: string, isActive: boolean) {
@@ -66,5 +66,5 @@ export async function setDocumentTypeActive(typeKey: string, isActive: boolean) 
     .eq("type_key", typeKey);
   if (error) throw new Error(error.message);
 
-  revalidatePath("/admin/more/document-types");
+  revalidatePath("/admin/document-types");
 }

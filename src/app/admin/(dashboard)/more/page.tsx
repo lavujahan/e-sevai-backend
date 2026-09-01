@@ -2,7 +2,6 @@ import { TopBar } from "@/components/TopBar";
 import { PageShell, CardLink } from "@/components/ui";
 
 const ITEMS = [
-  { href: "/admin/more/document-types", label: "Document Types", desc: "What staff can tag scans as, synced to every device" },
   { href: "/admin/more/ai-usage", label: "AI Usage & Cost", desc: "Groq call volume, cost, parse vs match" },
   { href: "/admin/more/failures", label: "Failure Reports", desc: "Documents/forms needing manual correction" },
   { href: "/admin/more/compliance", label: "Compliance & Audit", desc: "Aadhaar storage check, code retention" },

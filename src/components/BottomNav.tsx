@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/centers", label: "Centers", match: (p: string) => p.startsWith("/admin/centers"), icon: BuildingIcon },
   { href: "/admin/sessions", label: "Sessions", match: (p: string) => p.startsWith("/admin/sessions"), icon: FileIcon },
   { href: "/admin/learning/templates", label: "Learning", match: (p: string) => p.startsWith("/admin/learning"), icon: BrainIcon },
+  { href: "/admin/document-types", label: "Doc Types", match: (p: string) => p.startsWith("/admin/document-types"), icon: TagIcon },
   { href: "/admin/more", label: "More", match: (p: string) => p.startsWith("/admin/more"), icon: DotsIcon },
 ];
 
@@ -16,7 +17,7 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-200 bg-white/95 backdrop-blur pb-[env(safe-area-inset-bottom)] dark:border-zinc-800 dark:bg-zinc-950/95">
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {TABS.map((tab) => {
           const active = tab.match(pathname);
           const Icon = tab.icon;
@@ -76,6 +77,15 @@ function BrainIcon({ active }: IconProps) {
       <path d="M9 4a3 3 0 0 0-3 3v.3A3 3 0 0 0 4 10v1a3 3 0 0 0 1.5 2.6A3 3 0 0 0 8 18h1V4H9Z" strokeLinejoin="round" />
       <path d="M15 4a3 3 0 0 1 3 3v.3A3 3 0 0 1 20 10v1a3 3 0 0 1-1.5 2.6A3 3 0 0 1 16 18h-1V4h0Z" strokeLinejoin="round" />
       <path d="M9 4h6M9 18h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TagIcon({ active }: IconProps) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8}>
+      <path d="M11.5 3.5H5a1.5 1.5 0 0 0-1.5 1.5v6.5a1.5 1.5 0 0 0 .44 1.06l8 8a1.5 1.5 0 0 0 2.12 0l6.5-6.5a1.5 1.5 0 0 0 0-2.12l-8-8a1.5 1.5 0 0 0-1.06-.44Z" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
     </svg>
   );
 }

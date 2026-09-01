@@ -7,7 +7,7 @@ import { DocTypeFieldRows } from "@/components/DocTypeFieldRows";
 export default function NewDocumentTypePage() {
   return (
     <>
-      <TopBar title="Add Document Type" backHref="/admin/more/document-types" />
+      <TopBar title="Add Document Type" backHref="/admin/document-types" />
       <PageShell>
         <form action={createDocumentType} className="flex flex-col gap-4">
           <Field label="Display name">

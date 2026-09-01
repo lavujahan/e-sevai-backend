@@ -13,7 +13,7 @@ export default async function DocumentTypesPage() {
 
   return (
     <>
-      <TopBar title="Document Types" backHref="/admin/more" />
+      <TopBar title="Document Types" />
       <PageShell>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           What staff can tag a scan as, and the fields the app should learn per type. Synced to every
@@ -21,7 +21,7 @@ export default async function DocumentTypesPage() {
         </p>
 
         <Link
-          href="/admin/more/document-types/new"
+          href="/admin/document-types/new"
           className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-700"
         >
           + Add document type
