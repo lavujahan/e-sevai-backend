@@ -50,6 +50,7 @@ export default async function CentersPage() {
                       {c.location && (
                         <div className="truncate text-sm text-zinc-500 dark:text-zinc-400">{c.location}</div>
                       )}
+                      <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">ID: {c.id}</div>
                     </div>
                     <Badge tone={c.status === "active" ? "green" : "zinc"}>{c.status}</Badge>
                   </div>

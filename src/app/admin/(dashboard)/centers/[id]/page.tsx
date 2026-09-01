@@ -32,6 +32,7 @@ export default async function CenterDetailPage({ params }: { params: Promise<{ i
             <SectionHeading>Center info</SectionHeading>
             <Badge tone={center.status === "active" ? "green" : "zinc"}>{center.status}</Badge>
           </div>
+          <p className="mb-3 text-xs text-zinc-400 dark:text-zinc-500">ID: {center.id}</p>
           <form action={updateCenterWithId} className="flex flex-col gap-3">
             <Field label="Name">
               <Input name="name" defaultValue={center.name} required />
@@ -78,6 +79,7 @@ export default async function CenterDetailPage({ params }: { params: Promise<{ i
                     <span className="font-medium text-zinc-900 dark:text-zinc-50">{s.name}</span>
                     <Badge tone={s.role === "center_admin" ? "blue" : "zinc"}>{s.role.replace("_", " ")}</Badge>
                   </div>
+                  <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">ID: {s.id}</div>
                 </CardLink>
               ))}
             </div>
