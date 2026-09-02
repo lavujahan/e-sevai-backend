@@ -125,5 +125,6 @@ export interface AppSettingsRow {
   confidence_threshold: number;
   session_code_expiry_minutes: number;
   feature_flags: Record<string, boolean>;
+  groq_api_key: string | null;
   updated_at: string;
 }

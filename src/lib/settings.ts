@@ -6,6 +6,7 @@ const DEFAULTS: AppSettingsRow = {
   confidence_threshold: 0.7,
   session_code_expiry_minutes: 10,
   feature_flags: {},
+  groq_api_key: null,
   updated_at: new Date(0).toISOString(),
 };
 

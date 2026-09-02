@@ -125,6 +125,11 @@ create table if not exists app_settings (
 );
 insert into app_settings (id) values (1) on conflict (id) do nothing;
 
+-- Admin-managed Groq API key shared across the whole fleet -- devices pull this at login
+-- (GET /api/staff/me) instead of staff pasting their own key, and cache it locally only for the
+-- duration of that login session (cleared on logout / idle auto-logout, re-fetched next login).
+alter table app_settings add column if not exists groq_api_key text;
+
 -- Atomic version-bump helpers (called via supabase.rpc from the API routes) -- supabase-js has
 -- no client-side transaction API, so the "flip old is_current off, insert new row as current"
 -- pair has to happen inside a single Postgres function to stay atomic under the partial unique

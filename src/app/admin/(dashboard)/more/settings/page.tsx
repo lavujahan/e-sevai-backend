@@ -11,26 +11,23 @@ function maskKey(key: string | undefined) {
 
 export default async function SettingsPage() {
   const settings = await getAppSettings();
-  const groqKey = maskKey(process.env.GROQ_API_KEY);
+  const groqKey = maskKey(settings.groq_api_key ?? undefined);
 
   return (
     <>
       <TopBar title="System Settings" backHref="/admin/more" />
       <PageShell>
-        <Card>
-          <SectionHeading>Groq API key</SectionHeading>
-          <p className="mb-1 font-mono text-sm text-zinc-900 dark:text-zinc-50">
-            {groqKey ?? "Not configured"}
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Set via the <code>GROQ_API_KEY</code> Vercel environment variable -- never stored in
-            the database or sent to the browser. Update it in Vercel project settings and
-            redeploy to rotate.
-          </p>
-        </Card>
-
         <form action={updateSettings}>
-          <Card className="flex flex-col gap-4">
+          <Card className="mb-6 flex flex-col gap-4">
+            <SectionHeading>Groq API key</SectionHeading>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Shared by every staff device for AI-assisted extraction -- pulled at login and
+              cleared from the device on logout, so staff never enter or see it themselves.
+            </p>
+            <Field label={groqKey ? `Currently set (${groqKey})` : "Not configured"}>
+              <Input name="groq_api_key" type="password" placeholder="Leave blank to keep the current key" />
+            </Field>
+
             <SectionHeading>Thresholds</SectionHeading>
             <Field label="Confidence threshold (0-1)">
               <Input
