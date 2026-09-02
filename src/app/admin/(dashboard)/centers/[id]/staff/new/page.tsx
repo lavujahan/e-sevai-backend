@@ -1,7 +1,8 @@
 import { addStaff } from "@/lib/actions/staff";
 import { TopBar } from "@/components/TopBar";
-import { PageShell, Field, Input, Select } from "@/components/ui";
+import { PageShell, Field, Input, Select, Label } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { SuggestKeyButton } from "@/components/SuggestKeyButton";
 
 export default async function NewStaffPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: centerId } = await params;
@@ -21,11 +22,18 @@ export default async function NewStaffPage({ params }: { params: Promise<{ id: s
               <option value="center_admin">Center admin</option>
             </Select>
           </Field>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <Label>API key</Label>
+              <SuggestKeyButton inputId="apiKey-new" />
+            </div>
+            <Input id="apiKey-new" name="apiKey" placeholder="Leave blank to auto-generate a passphrase" />
+          </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            An API key will be generated on the next screen — shown once, for entry into the
-            Android app's Settings screen.
+            Shown once on the next screen — enter it in the Android app's Settings screen for
+            this staff member's device.
           </p>
-          <SubmitButton>Add staff &amp; generate key</SubmitButton>
+          <SubmitButton>Add staff</SubmitButton>
         </form>
       </PageShell>
     </>

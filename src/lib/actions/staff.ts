@@ -6,12 +6,26 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey, hashApiKey } from "@/lib/crypto";
 import type { StaffRole } from "@/lib/types";
 
+const MIN_API_KEY_LENGTH = 6;
+
+/** Admin can type their own API key instead of using the suggested passphrase -- blank falls
+ * back to generateApiKey(); a non-blank value just needs a sane minimum length, since anything
+ * hashable is valid downstream (hashApiKey/requireStaffAuth are format-agnostic). */
+function resolveApiKey(formData: FormData): string {
+  const custom = String(formData.get("apiKey") ?? "").trim();
+  if (!custom) return generateApiKey();
+  if (custom.length < MIN_API_KEY_LENGTH) {
+    throw new Error(`API key must be at least ${MIN_API_KEY_LENGTH} characters`);
+  }
+  return custom;
+}
+
 export async function addStaff(centerId: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const role = String(formData.get("role") ?? "field_staff") as StaffRole;
   if (!name) throw new Error("Staff name is required");
 
-  const apiKey = generateApiKey();
+  const apiKey = resolveApiKey(formData);
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("staff")
@@ -38,8 +52,8 @@ export async function updateStaff(centerId: string, staffId: string, formData: F
   revalidatePath(`/admin/centers/${centerId}/staff/${staffId}/edit`);
 }
 
-export async function resetStaffAccess(centerId: string, staffId: string) {
-  const apiKey = generateApiKey();
+export async function resetStaffAccess(centerId: string, staffId: string, formData: FormData) {
+  const apiKey = resolveApiKey(formData);
   const supabase = createAdminClient();
   const { error } = await supabase
     .from("staff")

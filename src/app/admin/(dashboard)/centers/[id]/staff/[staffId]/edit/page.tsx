@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TopBar } from "@/components/TopBar";
-import { PageShell, Card, Field, Input, Select } from "@/components/ui";
+import { PageShell, Card, Field, Input, Select, Label } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { SuggestKeyButton } from "@/components/SuggestKeyButton";
 import { updateStaff, resetStaffAccess } from "@/lib/actions/staff";
 import { formatDateTime } from "@/lib/format";
 
@@ -32,7 +33,7 @@ export default async function EditStaffPage({
             <p className="mb-1 text-sm font-semibold text-amber-900 dark:text-amber-200">
               New API key — copy it now
             </p>
-            <p className="mb-2 break-all rounded bg-white px-2 py-1.5 font-mono text-sm text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+            <p className="mb-2 break-words rounded bg-white px-2 py-1.5 font-mono text-sm text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
               {newKey}
             </p>
             <p className="text-xs text-amber-800 dark:text-amber-300">
@@ -61,8 +62,15 @@ export default async function EditStaffPage({
           <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
             Key last reset {formatDateTime(staff.api_key_last_reset_at)}
           </p>
-          <form action={resetAccessWithIds}>
-            <SubmitButton variant="danger">Reset access (new API key)</SubmitButton>
+          <form action={resetAccessWithIds} className="flex flex-col gap-3">
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <Label>New API key</Label>
+                <SuggestKeyButton inputId="apiKey-reset" />
+              </div>
+              <Input id="apiKey-reset" name="apiKey" placeholder="Leave blank to auto-generate a passphrase" />
+            </div>
+            <SubmitButton variant="danger">Reset access</SubmitButton>
           </form>
         </Card>
       </PageShell>
