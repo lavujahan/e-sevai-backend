@@ -210,6 +210,43 @@ begin
 end;
 $$;
 
+-- Learned templates are per (doc_type, side) now, not just per doc_type -- the Android app tracks
+-- front/back layouts independently (a document type's front and back are different physical pages),
+-- and without this a device that's learned both sides could only ever share whichever one scored
+-- higher, since only one "current" row per doc_type existed.
+alter table document_templates add column if not exists side text not null default 'FRONT' check (side in ('FRONT','BACK'));
+
+drop index if exists one_current_template_per_type;
+create unique index if not exists one_current_template_per_type
+  on document_templates(doc_type, side) where is_current;
+
+drop function if exists upsert_template_version(text, jsonb, text);
+create or replace function upsert_template_version(
+  p_doc_type text,
+  p_side text,
+  p_fields jsonb,
+  p_created_by text
+) returns document_templates
+language plpgsql
+as $$
+declare
+  v_next_version int;
+  v_row document_templates;
+begin
+  select coalesce(max(layout_version), 0) + 1 into v_next_version
+  from document_templates where doc_type = p_doc_type and side = p_side;
+
+  update document_templates set is_current = false
+  where doc_type = p_doc_type and side = p_side and is_current = true;
+
+  insert into document_templates (doc_type, side, layout_version, fields, is_current, created_by)
+  values (p_doc_type, p_side, v_next_version, p_fields, true, p_created_by)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
 -- RLS: all access to these tables goes through Next.js server code using the Supabase
 -- service-role key (API routes authenticate via the staff bearer key in lib/auth.ts; admin
 -- panel pages authenticate via Supabase Auth + middleware). The service role bypasses RLS,
