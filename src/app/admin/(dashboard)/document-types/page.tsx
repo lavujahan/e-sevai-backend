@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TopBar } from "@/components/TopBar";
-import { PageShell, Card, EmptyState, Badge } from "@/components/ui";
-import { setDocumentTypeActive } from "@/lib/actions/documentTypes";
+import { PageShell, CardLink, EmptyState, Badge } from "@/components/ui";
 
 export default async function DocumentTypesPage() {
   const supabase = createAdminClient();
@@ -35,9 +34,8 @@ export default async function DocumentTypesPage() {
               const fieldCount = Array.isArray(t.document_type_fields)
                 ? (t.document_type_fields[0]?.count ?? 0)
                 : 0;
-              const toggle = setDocumentTypeActive.bind(null, t.type_key, !t.is_active);
               return (
-                <Card key={t.type_key}>
+                <CardLink key={t.type_key} href={`/admin/document-types/${t.type_key}/edit`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate font-medium text-zinc-900 dark:text-zinc-50">
@@ -47,16 +45,9 @@ export default async function DocumentTypesPage() {
                         {t.type_key} &middot; {fieldCount} field{fieldCount === 1 ? "" : "s"}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <Badge tone={t.is_active ? "green" : "zinc"}>{t.is_active ? "active" : "inactive"}</Badge>
-                      <form action={toggle}>
-                        <button type="submit" className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                          {t.is_active ? "Deactivate" : "Reactivate"}
-                        </button>
-                      </form>
-                    </div>
+                    <Badge tone={t.is_active ? "green" : "zinc"}>{t.is_active ? "active" : "inactive"}</Badge>
                   </div>
-                </Card>
+                </CardLink>
               );
             })}
           </div>
