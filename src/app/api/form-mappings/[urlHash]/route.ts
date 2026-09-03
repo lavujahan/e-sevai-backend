@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffAuth, apiAuthErrorResponse } from "@/lib/auth";
+import { getAppSettings } from "@/lib/settings";
 import type { FormMappingField } from "@/lib/types";
 
 export async function GET(
@@ -36,6 +37,14 @@ export async function POST(
     await requireStaffAuth(request);
   } catch (e) {
     return apiAuthErrorResponse(e);
+  }
+
+  const settings = await getAppSettings();
+  if (settings.feature_flags.form_mapping_ingestion_enabled === false) {
+    return NextResponse.json(
+      { error: "Form-mapping submissions are disabled by administrator" },
+      { status: 403 },
+    );
   }
 
   const { urlHash } = await params;

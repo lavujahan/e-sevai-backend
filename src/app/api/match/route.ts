@@ -26,9 +26,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const settings = await getAppSettings();
+  // The admin-managed key (settings.groq_api_key) is the source of truth —
+  // it's already what /api/staff/me ships to devices — with the env var
+  // only as a fallback for deployments that haven't set it via the
+  // dashboard yet.
+  const apiKey = settings.groq_api_key ?? process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "Groq API key is not configured" }, { status: 502 });
+  }
+
   let matchResult;
   try {
-    matchResult = await matchFormFields(body.formFields, body.availableDataKeys);
+    matchResult = await matchFormFields(body.formFields, body.availableDataKeys, apiKey);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Groq match failed" },
@@ -37,7 +47,6 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const settings = await getAppSettings();
 
   await supabase.from("ai_usage_log").insert({
     type: "match",

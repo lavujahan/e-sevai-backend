@@ -4,7 +4,10 @@
 // session, ask Groq to map one to the other.
 
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MATCH_MODEL = "llama-3.1-8b-instant";
+// llama-3.1-8b-instant was decommissioned by Groq on 2026-08-16; this is
+// their own recommended replacement for that exact use case (small/fast
+// instant-tier chat model). See https://console.groq.com/docs/deprecations.
+const MATCH_MODEL = "openai/gpt-oss-20b";
 
 export interface FormFieldDescriptor {
   id: string;
@@ -45,10 +48,8 @@ export interface GroqMatchCallResult {
 export async function matchFormFields(
   formFields: FormFieldDescriptor[],
   availableDataKeys: string[],
+  apiKey: string,
 ): Promise<GroqMatchCallResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY is not configured");
-
   const fieldList = formFields.map((f) => `- id=${f.id}, label="${f.label}", type=${f.type}`).join("\n");
   const dataKeyList = availableDataKeys.map((k) => `- ${k}`).join("\n");
 
