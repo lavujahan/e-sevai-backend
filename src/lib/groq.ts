@@ -19,27 +19,6 @@ export interface FieldMatchResult {
   matches: { formFieldId: string; dataKey: string | null; confidence: number }[];
 }
 
-const matchJsonSchema = {
-  type: "object",
-  properties: {
-    matches: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          formFieldId: { type: "string" },
-          dataKey: { type: ["string", "null"] },
-          confidence: { type: "number" },
-        },
-        required: ["formFieldId", "dataKey", "confidence"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["matches"],
-  additionalProperties: false,
-};
-
 export interface GroqMatchCallResult {
   result: FieldMatchResult;
   tokensUsed: number | null;
@@ -53,7 +32,23 @@ export async function matchFormFields(
   const fieldList = formFields.map((f) => `- id=${f.id}, label="${f.label}", type=${f.type}`).join("\n");
   const dataKeyList = availableDataKeys.map((k) => `- ${k}`).join("\n");
 
-  const prompt = `A citizen service form has these fields:\n${fieldList}\n\nThe citizen data on file has these keys available:\n${dataKeyList}\n\nFor each form field, pick the single best-matching data key (or null if none fits) and a confidence 0-1.`;
+  // json_schema/strict mode is documented as supported by gpt-oss models but
+  // is known to be unreliable in practice (Groq's own docs ask for repros;
+  // community reports of it being silently ignored or 400ing under load).
+  // json_object mode is the documented, broadly-compatible fallback: it
+  // guarantees syntactically valid JSON but not schema conformance, so the
+  // exact shape is spelled out in the prompt instead and validated below.
+  const prompt = `A citizen service form has these fields:
+${fieldList}
+
+The citizen data on file has these keys available:
+${dataKeyList}
+
+For each form field, pick the single best-matching data key (or null if none fits) and a confidence 0-1.
+
+Respond with ONLY a JSON object, no other text, matching exactly this shape:
+{"matches": [{"formFieldId": "<the field's id, copied exactly>", "dataKey": "<a key from the list above, or null>", "confidence": <number 0-1>}]}
+Include exactly one entry per form field listed above, in the same order.`;
 
   const response = await fetch(GROQ_CHAT_URL, {
     method: "POST",
@@ -66,10 +61,7 @@ export async function matchFormFields(
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
       max_completion_tokens: 1024,
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "field_match", strict: true, schema: matchJsonSchema },
-      },
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -82,7 +74,40 @@ export async function matchFormFields(
   if (!content) throw new Error("Groq returned no content");
 
   return {
-    result: JSON.parse(content) as FieldMatchResult,
+    result: parseFieldMatchResult(content),
     tokensUsed: body.usage?.total_tokens ?? null,
   };
+}
+
+/**
+ * json_object mode only guarantees valid JSON, not this specific shape, so
+ * unlike the old strict-schema path this has to defensively validate and
+ * normalize rather than trust JSON.parse's result directly. Malformed
+ * entries are dropped rather than thrown on the whole response — the caller
+ * (match/route.ts) already treats a low/absent match per field as normal.
+ */
+function parseFieldMatchResult(content: string): FieldMatchResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Groq did not return valid JSON");
+  }
+
+  const matches = (parsed as { matches?: unknown })?.matches;
+  if (!Array.isArray(matches)) {
+    throw new Error("Groq response was missing a 'matches' array");
+  }
+
+  const validMatches = matches.filter(
+    (m): m is FieldMatchResult["matches"][number] =>
+      typeof m === "object" &&
+      m !== null &&
+      typeof (m as Record<string, unknown>).formFieldId === "string" &&
+      ((m as Record<string, unknown>).dataKey === null ||
+        typeof (m as Record<string, unknown>).dataKey === "string") &&
+      typeof (m as Record<string, unknown>).confidence === "number",
+  );
+
+  return { matches: validMatches };
 }
