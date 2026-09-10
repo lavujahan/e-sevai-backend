@@ -4,26 +4,13 @@ import { requireStaffAuth, apiAuthErrorResponse } from "@/lib/auth";
 import { findRawAadhaarViolation } from "@/lib/aadhaar";
 import { generateSessionCode } from "@/lib/session-code";
 import { getAppSettings } from "@/lib/settings";
-import type { FieldIndex, SessionDocument } from "@/lib/types";
+import { buildFieldIndex } from "@/lib/fieldIndex";
+import type { SessionDocument } from "@/lib/types";
 
 interface SessionPushBody {
   sessionId: string;
   citizenDisplayName?: string | null;
   documents: SessionDocument[];
-}
-
-function buildFieldIndex(documents: SessionDocument[]): FieldIndex {
-  const index: FieldIndex = {};
-  for (const doc of documents) {
-    for (const field of doc.fields ?? []) {
-      index[field.fieldKey] = {
-        value: field.displayValue,
-        confidence: field.confidence,
-        documentId: doc.documentId,
-      };
-    }
-  }
-  return index;
 }
 
 export async function POST(request: Request) {

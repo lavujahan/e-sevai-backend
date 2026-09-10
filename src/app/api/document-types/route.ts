@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       .order("display_label"),
     supabase
       .from("document_type_fields")
-      .select("type_key, field_key, display_label, description, format_regex, sort_order")
+      .select("type_key, field_key, display_label, description, format_regex, sensitive, sort_order")
       .order("sort_order"),
   ]);
 
@@ -47,6 +47,7 @@ export async function GET(request: Request) {
         displayLabel: field.display_label,
         description: field.description,
         formatRegex: field.format_regex,
+        sensitive: field.sensitive,
       })),
     })),
   });

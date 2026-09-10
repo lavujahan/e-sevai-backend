@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TopBar } from "@/components/TopBar";
 import { PageShell, Card, SectionHeading, Field, Input, Badge } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DocTypeFieldRows } from "@/components/DocTypeFieldRows";
-import { updateDocumentType, setDocumentTypeActive, deleteDocumentType } from "@/lib/actions/documentTypes";
+import { updateDocumentType, setDocumentTypeActive } from "@/lib/actions/documentTypes";
 
 export default async function EditDocumentTypePage({
   params,
@@ -18,7 +19,7 @@ export default async function EditDocumentTypePage({
     supabase.from("document_types").select("*").eq("type_key", typeKey).maybeSingle(),
     supabase
       .from("document_type_fields")
-      .select("id, display_label, description, format_regex")
+      .select("id, display_label, description, format_regex, sensitive")
       .eq("type_key", typeKey)
       .order("sort_order"),
   ]);
@@ -27,7 +28,6 @@ export default async function EditDocumentTypePage({
 
   const updateWithKey = updateDocumentType.bind(null, typeKey);
   const toggleActive = setDocumentTypeActive.bind(null, typeKey, !type.is_active);
-  const deleteWithKey = deleteDocumentType.bind(null, typeKey);
 
   return (
     <>
@@ -52,14 +52,8 @@ export default async function EditDocumentTypePage({
               </p>
             </div>
             <Field label="Expected fields">
-              <DocTypeFieldRows initialFields={fields ?? []} locked={type.is_builtin} />
+              <DocTypeFieldRows initialFields={fields ?? []} />
             </Field>
-            {type.is_builtin && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                This is a built-in type — its field list is fixed by the app. You can still add or edit each
-                field&apos;s description to help AI-assisted extraction.
-              </p>
-            )}
             <SubmitButton>Save changes</SubmitButton>
           </form>
         </Card>
@@ -77,12 +71,15 @@ export default async function EditDocumentTypePage({
 
         <Card>
           <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Existing templates or sessions that reference this type will keep showing its old key —
-            this doesn&apos;t affect them, but staff devices will stop being offered this type.
+            Permanently deletes this type, its learned templates, and cleans up any sessions that
+            reference it. Shows exactly what will be affected before anything is removed.
           </p>
-          <form action={deleteWithKey}>
-            <SubmitButton variant="danger">Delete permanently</SubmitButton>
-          </form>
+          <Link
+            href={`/admin/document-types/${typeKey}/delete`}
+            className="block w-full rounded-lg bg-red-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Delete permanently
+          </Link>
         </Card>
       </PageShell>
     </>
