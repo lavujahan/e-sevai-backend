@@ -129,10 +129,9 @@ export interface FieldRegexSuggestion {
   confidence: number;
 }
 
-/** Given a custom document-type field's label + description, asks Groq whether the value follows
- * a checkable format and, if so, for a regex matching it -- e.g. "License Number" / "10-character
- * alphanumeric code" -> a pattern the app's REGEX_PATTERN local-matching strategy can use, the same
- * benefit built-in fields like Aadhaar/PAN already get from their hand-written regexes. Never
+/** Given a document-type field's label + description, asks Groq whether the value follows a
+ * checkable format and, if so, for a regex matching it -- e.g. "License Number" / "10-character
+ * alphanumeric code" -> a pattern the app's REGEX_PATTERN local-matching strategy can use. Never
  * applied automatically -- the caller (the admin dashboard's "Suggest regex" action) always shows
  * this for review/edit before it's saved. */
 export async function deriveFieldRegex(

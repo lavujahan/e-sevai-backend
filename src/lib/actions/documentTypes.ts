@@ -20,7 +20,7 @@ function slugify(text: string): string {
 /** Called directly from the "Suggest regex" button in DocTypeFieldRows (a Server Action invoked
  * as a plain async call, not a form submit) -- the caller always shows the result for the admin to
  * review/edit before it ever reaches a form field, per the plan's "AI-derived regex is
- * admin-reviewed, never auto-applied" decision. Custom types only; built-in fields never call this. */
+ * admin-reviewed, never auto-applied" decision. */
 export async function suggestFieldRegex(
   label: string,
   description: string,
