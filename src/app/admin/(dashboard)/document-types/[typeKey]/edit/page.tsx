@@ -18,7 +18,7 @@ export default async function EditDocumentTypePage({
     supabase.from("document_types").select("*").eq("type_key", typeKey).maybeSingle(),
     supabase
       .from("document_type_fields")
-      .select("id, display_label")
+      .select("id, display_label, description, format_regex")
       .eq("type_key", typeKey)
       .order("sort_order"),
   ]);
@@ -52,8 +52,14 @@ export default async function EditDocumentTypePage({
               </p>
             </div>
             <Field label="Expected fields">
-              <DocTypeFieldRows initialFields={fields ?? []} />
+              <DocTypeFieldRows initialFields={fields ?? []} locked={type.is_builtin} />
             </Field>
+            {type.is_builtin && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                This is a built-in type — its field list is fixed by the app. You can still add or edit each
+                field&apos;s description to help AI-assisted extraction.
+              </p>
+            )}
             <SubmitButton>Save changes</SubmitButton>
           </form>
         </Card>

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAppSettings } from "@/lib/settings";
+import { deriveFieldRegex, type FieldRegexSuggestion } from "@/lib/groq";
 
 function slugify(text: string): string {
   const slug = text
@@ -13,14 +15,31 @@ function slugify(text: string): string {
   return slug || "TYPE";
 }
 
+/** Called directly from the "Suggest regex" button in DocTypeFieldRows (a Server Action invoked
+ * as a plain async call, not a form submit) -- the caller always shows the result for the admin to
+ * review/edit before it ever reaches a form field, per the plan's "AI-derived regex is
+ * admin-reviewed, never auto-applied" decision. Custom types only; built-in fields never call this. */
+export async function suggestFieldRegex(
+  label: string,
+  description: string,
+): Promise<FieldRegexSuggestion | { error: string }> {
+  const settings = await getAppSettings();
+  const apiKey = settings.groq_api_key ?? process.env.GROQ_API_KEY;
+  if (!apiKey) return { error: "Groq API key is not configured" };
+  try {
+    return await deriveFieldRegex(label, description, apiKey);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Regex suggestion failed" };
+  }
+}
+
 export async function createDocumentType(formData: FormData) {
   const displayLabel = String(formData.get("display_label") ?? "").trim();
   if (!displayLabel) throw new Error("Display name is required");
 
-  const fieldLabels = formData
-    .getAll("field_label")
-    .map((v) => String(v).trim())
-    .filter(Boolean);
+  const fieldLabels = formData.getAll("field_label").map((v) => String(v).trim());
+  const fieldDescriptions = formData.getAll("field_description").map((v) => String(v).trim());
+  const fieldRegexes = formData.getAll("field_regex").map((v) => String(v).trim());
 
   const supabase = createAdminClient();
 
@@ -42,15 +61,19 @@ export async function createDocumentType(formData: FormData) {
     .insert({ type_key: typeKey, display_label: displayLabel });
   if (insertTypeError) throw new Error(insertTypeError.message);
 
-  if (fieldLabels.length > 0) {
-    const { error: insertFieldsError } = await supabase.from("document_type_fields").insert(
-      fieldLabels.map((label, index) => ({
-        type_key: typeKey,
-        field_key: slugify(label),
-        display_label: label,
-        sort_order: index,
-      })),
-    );
+  const fieldsToInsert = fieldLabels
+    .map((label, index) => ({
+      type_key: typeKey,
+      field_key: slugify(label),
+      display_label: label,
+      description: fieldDescriptions[index] || null,
+      format_regex: fieldRegexes[index] || null,
+      sort_order: index,
+    }))
+    .filter((f) => f.display_label.length > 0);
+
+  if (fieldsToInsert.length > 0) {
+    const { error: insertFieldsError } = await supabase.from("document_type_fields").insert(fieldsToInsert);
     if (insertFieldsError) throw new Error(insertFieldsError.message);
   }
 
@@ -78,11 +101,38 @@ export async function updateDocumentType(typeKey: string, formData: FormData) {
 
   const supabase = createAdminClient();
 
+  const { data: type, error: typeFetchError } = await supabase
+    .from("document_types")
+    .select("is_builtin")
+    .eq("type_key", typeKey)
+    .maybeSingle();
+  if (typeFetchError) throw new Error(typeFetchError.message);
+
   const { error: updateTypeError } = await supabase
     .from("document_types")
     .update({ display_label: displayLabel })
     .eq("type_key", typeKey);
   if (updateTypeError) throw new Error(updateTypeError.message);
+
+  if (type?.is_builtin) {
+    // Built-in: field identity (key/label, add/remove) is fixed by the app's hardcoded
+    // DocumentFieldSchemas.kt -- only description is ever admin-entered here. Enforced here, not
+    // just hidden in the UI, since DocTypeFieldRows renders no add/remove/label controls for a
+    // locked type but a raw POST must not be able to bypass that.
+    const fieldIds = formData.getAll("field_id").map((v) => String(v));
+    const descriptions = formData.getAll("field_description").map((v) => String(v).trim());
+    for (let i = 0; i < fieldIds.length; i++) {
+      if (!fieldIds[i]) continue;
+      const { error } = await supabase
+        .from("document_type_fields")
+        .update({ description: descriptions[i] || null })
+        .eq("id", fieldIds[i]);
+      if (error) throw new Error(error.message);
+    }
+    revalidatePath("/admin/document-types");
+    revalidatePath(`/admin/document-types/${typeKey}/edit`);
+    return;
+  }
 
   const { data: existingFields, error: existingError } = await supabase
     .from("document_type_fields")
@@ -93,36 +143,47 @@ export async function updateDocumentType(typeKey: string, formData: FormData) {
 
   const fieldIds = formData.getAll("field_id").map((v) => String(v));
   const fieldLabels = formData.getAll("field_label").map((v) => String(v).trim());
+  const fieldDescriptions = formData.getAll("field_description").map((v) => String(v).trim());
+  const fieldRegexes = formData.getAll("field_regex").map((v) => String(v).trim());
 
   const keptIds: string[] = [];
-  const newLabels: { label: string; sortOrder: number }[] = [];
-  const updates: { id: string; label: string; sortOrder: number }[] = [];
+  const newFields: { label: string; description: string; regex: string; sortOrder: number }[] = [];
+  const updates: { id: string; label: string; description: string; regex: string; sortOrder: number }[] = [];
 
   fieldLabels.forEach((label, index) => {
     if (!label) return;
     const id = fieldIds[index];
+    const description = fieldDescriptions[index] ?? "";
+    const regex = fieldRegexes[index] ?? "";
     if (id) {
       keptIds.push(id);
-      updates.push({ id, label, sortOrder: index });
+      updates.push({ id, label, description, regex, sortOrder: index });
     } else {
-      newLabels.push({ label, sortOrder: index });
+      newFields.push({ label, description, regex, sortOrder: index });
     }
   });
 
   for (const u of updates) {
     const { error } = await supabase
       .from("document_type_fields")
-      .update({ display_label: u.label, sort_order: u.sortOrder })
+      .update({
+        display_label: u.label,
+        description: u.description || null,
+        format_regex: u.regex || null,
+        sort_order: u.sortOrder,
+      })
       .eq("id", u.id);
     if (error) throw new Error(error.message);
   }
 
-  if (newLabels.length > 0) {
+  if (newFields.length > 0) {
     const { error } = await supabase.from("document_type_fields").insert(
-      newLabels.map((f) => ({
+      newFields.map((f) => ({
         type_key: typeKey,
         field_key: slugify(f.label),
         display_label: f.label,
+        description: f.description || null,
+        format_regex: f.regex || null,
         sort_order: f.sortOrder,
       })),
     );

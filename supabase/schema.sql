@@ -101,6 +101,7 @@ create table if not exists document_types (
   type_key text primary key,
   display_label text not null,
   is_active boolean not null default true,
+  is_builtin boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -109,10 +110,46 @@ create table if not exists document_type_fields (
   type_key text not null references document_types(type_key) on delete cascade,
   field_key text not null,
   display_label text not null,
+  description text,
+  format_regex text,
   sort_order int not null default 0,
   unique (type_key, field_key)
 );
 create index if not exists document_type_fields_type_key_idx on document_type_fields(type_key);
+
+-- One-time, idempotent seed: the app's 4 built-in types (AADHAAR/PAN/SCHOOL_CERT/RATION_CARD)
+-- resolve their fields from hardcoded Kotlin (DocumentFieldSchemas.kt), never from these rows --
+-- but an admin-entered *description* on one of these fields is only useful if the row's field_key
+-- exactly matches that hardcoded key. This seed guarantees that, and is_builtin=true is what the
+-- admin dashboard uses to lock these 4 types' field identity (no add/remove/rename, description
+-- only) so the match can never drift again. Uses `do update` on document_types in case an admin
+-- already created one of these 4 by hand before this migration ran -- their display_label/is_active
+-- are left alone, only is_builtin is corrected.
+insert into document_types (type_key, display_label, is_active, is_builtin) values
+  ('AADHAAR', 'Aadhaar', true, true),
+  ('PAN', 'PAN Card', true, true),
+  ('SCHOOL_CERT', 'School Certificate', true, true),
+  ('RATION_CARD', 'Ration Card', true, true)
+on conflict (type_key) do update set is_builtin = true;
+
+insert into document_type_fields (type_key, field_key, display_label, sort_order) values
+  ('AADHAAR', 'full_name', 'Full Name', 0),
+  ('AADHAAR', 'dob', 'Date of Birth', 1),
+  ('AADHAAR', 'gender', 'Gender', 2),
+  ('AADHAAR', 'aadhaar_number', 'Aadhaar Number', 3),
+  ('AADHAAR', 'address', 'Address', 4),
+  ('PAN', 'full_name', 'Full Name', 0),
+  ('PAN', 'father_name', 'Father''s Name', 1),
+  ('PAN', 'dob', 'Date of Birth', 2),
+  ('PAN', 'pan_number', 'PAN Number', 3),
+  ('SCHOOL_CERT', 'student_name', 'Student Name', 0),
+  ('SCHOOL_CERT', 'dob', 'Date of Birth', 1),
+  ('SCHOOL_CERT', 'school_name', 'School Name', 2),
+  ('SCHOOL_CERT', 'certificate_number', 'Certificate Number', 3),
+  ('RATION_CARD', 'card_number', 'Card Number', 0),
+  ('RATION_CARD', 'head_of_family', 'Head of Family', 1),
+  ('RATION_CARD', 'address', 'Address', 2)
+on conflict (type_key, field_key) do nothing;
 
 -- Singleton row of admin-tunable settings (System Settings screen).
 create table if not exists app_settings (

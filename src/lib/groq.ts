@@ -13,6 +13,8 @@ export interface FormFieldDescriptor {
   id: string;
   label: string;
   type: string;
+  /** Only present when the extension's deterministic label detection found nothing at all for this field. */
+  context?: string;
 }
 
 export interface FieldMatchResult {
@@ -29,7 +31,16 @@ export async function matchFormFields(
   availableDataKeys: string[],
   apiKey: string,
 ): Promise<GroqMatchCallResult> {
-  const fieldList = formFields.map((f) => `- id=${f.id}, label="${f.label}", type=${f.type}`).join("\n");
+  // A field the extension's deterministic detection couldn't find any label
+  // text for at all gets a "context" snippet instead (surrounding HTML) —
+  // give the model that raw context to infer purpose from, rather than
+  // just an empty label it has nothing to work with.
+  const fieldList = formFields
+    .map((f) => {
+      const base = `- id=${f.id}, label="${f.label}", type=${f.type}`;
+      return f.context ? `${base}, context=${JSON.stringify(f.context)}` : base;
+    })
+    .join("\n");
   const dataKeyList = availableDataKeys.map((k) => `- ${k}`).join("\n");
 
   // json_schema/strict mode is documented as supported by gpt-oss models but
@@ -45,6 +56,7 @@ The citizen data on file has these keys available:
 ${dataKeyList}
 
 For each form field, pick the single best-matching data key (or null if none fits) and a confidence 0-1.
+Some fields have no label — use their "context" (surrounding HTML) to infer what the field represents instead.
 
 Respond with ONLY a JSON object, no other text, matching exactly this shape:
 {"matches": [{"formFieldId": "<the field's id, copied exactly>", "dataKey": "<a key from the list above, or null>", "confidence": <number 0-1>}]}
@@ -110,4 +122,79 @@ function parseFieldMatchResult(content: string): FieldMatchResult {
   );
 
   return { matches: validMatches };
+}
+
+export interface FieldRegexSuggestion {
+  regex: string | null;
+  confidence: number;
+}
+
+/** Given a custom document-type field's label + description, asks Groq whether the value follows
+ * a checkable format and, if so, for a regex matching it -- e.g. "License Number" / "10-character
+ * alphanumeric code" -> a pattern the app's REGEX_PATTERN local-matching strategy can use, the same
+ * benefit built-in fields like Aadhaar/PAN already get from their hand-written regexes. Never
+ * applied automatically -- the caller (the admin dashboard's "Suggest regex" action) always shows
+ * this for review/edit before it's saved. */
+export async function deriveFieldRegex(
+  label: string,
+  description: string,
+  apiKey: string,
+): Promise<FieldRegexSuggestion> {
+  const prompt = `A form field is labeled "${label}"${description ? ` and described as: "${description}"` : ""}.
+
+If this field's value follows a consistent, checkable format (e.g. a fixed-length number, a code with a known letter/digit pattern), give a single JavaScript-compatible regular expression (no leading/trailing slashes, no flags) that matches valid values. If the value is free-form text with no checkable format (like a name or address), the regex should be null.
+
+Respond with ONLY a JSON object, no other text, matching exactly this shape:
+{"regex": "<a JS-compatible regex pattern, or null>", "confidence": <number 0-1>}`;
+
+  const response = await fetch(GROQ_CHAT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MATCH_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
+      max_completion_tokens: 256,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Groq request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = await response.json();
+  const content = body.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Groq returned no content");
+
+  return parseFieldRegexSuggestion(content);
+}
+
+/** Same defensive-parse rationale as parseFieldMatchResult -- json_object mode guarantees valid
+ * JSON, not this specific shape. A malformed/missing regex just becomes null rather than throwing,
+ * since the caller already treats "no format detected" as a normal outcome. */
+function parseFieldRegexSuggestion(content: string): FieldRegexSuggestion {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Groq did not return valid JSON");
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const regex = typeof obj.regex === "string" && obj.regex.trim() !== "" ? obj.regex : null;
+  const confidence = typeof obj.confidence === "number" ? obj.confidence : 0;
+
+  if (regex !== null) {
+    try {
+      new RegExp(regex);
+    } catch {
+      return { regex: null, confidence: 0 };
+    }
+  }
+
+  return { regex, confidence };
 }
