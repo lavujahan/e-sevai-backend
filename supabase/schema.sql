@@ -259,6 +259,99 @@ begin
 end;
 $$;
 
+-- Fleet-wide multi-variant template sharing: a document type's front/back can each have more than
+-- one genuinely different physical layout ("variant") in the field -- e.g. an old vs. new print of
+-- the same card. Previously the backend stored exactly one "current" row per (doc_type, side), so
+-- whichever device pushed most recently silently clobbered another device's different-but-equally-
+-- real variant. variant_group_id groups a version lineage (like layout_version already did, just at
+-- one more level of scoping); layout_fingerprint is opaque device-computed JSON, stored but never
+-- parsed/compared server-side -- the device already owns LayoutSimilarity.overlapScore and decides
+-- client-side whether a push matches an existing variant or is a new one (see BackendSyncRepository/
+-- TemplateSyncWorker on the Android side). A null fingerprint (every pre-migration row) is designed
+-- to never match anything going forward -- it just sits as its own permanent legacy variant group.
+alter table document_templates add column if not exists variant_group_id uuid;
+alter table document_templates add column if not exists layout_fingerprint text;
+
+-- Backfill: every existing distinct (doc_type, side) becomes one legacy variant group, preserving
+-- its existing version-number history as a single lineage.
+update document_templates dt
+set variant_group_id = grp.id
+from (
+  select doc_type, side, gen_random_uuid() as id
+  from document_templates
+  group by doc_type, side
+) grp
+where dt.doc_type = grp.doc_type and dt.side = grp.side and dt.variant_group_id is null;
+
+alter table document_templates alter column variant_group_id set not null;
+
+-- Fix: this constraint never included `side`, so independently-numbered FRONT/BACK version
+-- sequences (upsert_template_version already scopes its max(layout_version) query by doc_type+side)
+-- could collide on the same version number for the same doc_type.
+alter table document_templates drop constraint if exists document_templates_doc_type_layout_version_key;
+alter table document_templates add constraint document_templates_doc_type_side_layout_version_key
+  unique (doc_type, side, layout_version);
+
+-- One current row per VARIANT GROUP now, not per (doc_type, side) -- this is the actual change that
+-- lets multiple variants of the same doc_type+side coexist as fleet state instead of one overwriting
+-- another.
+drop index if exists one_current_template_per_type;
+create unique index if not exists one_current_template_per_variant_group
+  on document_templates(variant_group_id) where is_current;
+
+drop function if exists upsert_template_version(text, text, jsonb, text);
+
+-- p_variant_group_id null = brand-new variant group (device found no match against GET's returned
+-- variants). Non-null = device matched an existing group -- add a version to that lineage.
+create or replace function upsert_template_version(
+  p_doc_type text,
+  p_side text,
+  p_fields jsonb,
+  p_created_by text,
+  p_variant_group_id uuid default null,
+  p_layout_fingerprint text default null
+) returns document_templates
+language plpgsql
+as $$
+declare
+  v_group_id uuid := coalesce(p_variant_group_id, gen_random_uuid());
+  v_next_version int;
+  v_row document_templates;
+begin
+  select coalesce(max(layout_version), 0) + 1 into v_next_version
+  from document_templates where doc_type = p_doc_type and side = p_side and variant_group_id = v_group_id;
+
+  update document_templates set is_current = false
+  where variant_group_id = v_group_id and is_current = true;
+
+  insert into document_templates
+    (doc_type, side, layout_version, fields, is_current, created_by, variant_group_id, layout_fingerprint)
+  values
+    (p_doc_type, p_side, v_next_version, p_fields, true, p_created_by, v_group_id, p_layout_fingerprint)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Bug fix: reactivate_template_version was scoped only by doc_type (no side at all), so reactivating
+-- a BACK version silently un-currented the FRONT template too. variant_group_id is already
+-- side-specific (a group never spans sides), so scoping by it alone is correct.
+create or replace function reactivate_template_version(p_id uuid) returns void
+language plpgsql
+as $$
+declare
+  v_group_id uuid;
+begin
+  select variant_group_id into v_group_id from document_templates where id = p_id;
+  if v_group_id is null then
+    raise exception 'template version not found';
+  end if;
+  update document_templates set is_current = false where variant_group_id = v_group_id and is_current = true;
+  update document_templates set is_current = true, last_verified = now() where id = p_id;
+end;
+$$;
+
 -- RLS: all access to these tables goes through Next.js server code using the Supabase
 -- service-role key (API routes authenticate via the staff bearer key in lib/auth.ts; admin
 -- panel pages authenticate via Supabase Auth + middleware). The service role bypasses RLS,

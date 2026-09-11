@@ -21,13 +21,26 @@ export async function GET(
     .select("*")
     .eq("doc_type", docType)
     .eq("side", side)
-    .eq("is_current", true)
-    .maybeSingle();
+    .eq("is_current", true);
 
-  if (error || !data) {
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!data || data.length === 0) {
     return NextResponse.json({ error: "No template for this document type/side" }, { status: 404 });
   }
-  return NextResponse.json(data);
+
+  // One entry per variant group -- a doc_type+side can now have more than one genuinely different
+  // physical layout learned fleet-wide, not just one "current" row.
+  return NextResponse.json({
+    variants: data.map((row) => ({
+      variantGroupId: row.variant_group_id,
+      layoutFingerprint: row.layout_fingerprint,
+      layoutVersion: row.layout_version,
+      fields: row.fields,
+      lastVerified: row.last_verified,
+    })),
+  });
 }
 
 export async function POST(
@@ -41,7 +54,12 @@ export async function POST(
   }
 
   const { docType } = await params;
-  const body = (await request.json()) as { side?: string; fields: TemplateField[] };
+  const body = (await request.json()) as {
+    side?: string;
+    fields: TemplateField[];
+    fingerprint?: string | null;
+    variantGroupId?: string | null;
+  };
   if (!Array.isArray(body.fields)) {
     return NextResponse.json({ error: "fields is required" }, { status: 400 });
   }
@@ -54,6 +72,8 @@ export async function POST(
       p_side: side,
       p_fields: body.fields,
       p_created_by: "device",
+      p_variant_group_id: body.variantGroupId ?? null,
+      p_layout_fingerprint: body.fingerprint ?? null,
     })
     .single();
 

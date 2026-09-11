@@ -30,20 +30,29 @@ export async function createAdminTemplate(formData: FormData) {
     .replace(/\s+/g, "_");
   if (!docType) throw new Error("Document type key is required");
 
+  const side = String(formData.get("side") ?? "FRONT").toUpperCase();
+
   const fields = parseFieldRows(formData);
   if (fields.length === 0) throw new Error("At least one field is required");
 
   const supabase = createAdminClient();
-  const { error } = await supabase.rpc("upsert_template_version", {
-    p_doc_type: docType,
-    p_fields: fields,
-    p_created_by: "admin",
-  });
+  // Admin-seeded templates always start a fresh, unfingerprinted variant group -- there's no
+  // device-computed layout fingerprint to compare against for a manually-typed starting template.
+  const { data, error } = await supabase
+    .rpc("upsert_template_version", {
+      p_doc_type: docType,
+      p_side: side,
+      p_fields: fields,
+      p_created_by: "admin",
+      p_variant_group_id: null,
+      p_layout_fingerprint: null,
+    })
+    .single();
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/learning/templates");
-  redirect(`/admin/learning/templates/${docType}`);
+  redirect(`/admin/learning/templates/${docType}/${side}/${(data as { variant_group_id: string }).variant_group_id}`);
 }
 
 export async function reactivateTemplateVersion(docType: string, versionId: string) {

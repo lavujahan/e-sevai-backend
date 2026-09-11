@@ -71,7 +71,10 @@ export interface TemplateField {
 export interface DocumentTemplateRow {
   id: string;
   doc_type: string;
+  side: "FRONT" | "BACK";
   layout_version: number;
+  variant_group_id: string;
+  layout_fingerprint: string | null;
   fields: TemplateField[];
   is_current: boolean;
   last_verified: string;
