@@ -26,6 +26,54 @@ export interface GroqMatchCallResult {
   tokensUsed: number | null;
 }
 
+// gpt-oss models' structured-output generation on Groq is documented as
+// occasionally flaky even in json_object mode (Groq's own docs ask for
+// repros on 400s from these models) -- this is model/provider-side
+// non-determinism, not something a request-shape change reliably
+// eliminates. A retry is the standard mitigation for that class of failure.
+const MAX_MATCH_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 300;
+
+function isRetryableGroqError(message: string): boolean {
+  return (
+    message.includes("json_validate_failed") ||
+    message.includes("Groq returned no content") ||
+    message.includes("Groq did not return valid JSON") ||
+    message.includes("Groq response was missing a 'matches' array")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callGroqMatch(prompt: string, apiKey: string): Promise<{ content: string; tokensUsed: number | null }> {
+  const response = await fetch(GROQ_CHAT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MATCH_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
+      max_completion_tokens: 1024,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Groq request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = await response.json();
+  const content = body.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Groq returned no content");
+
+  return { content, tokensUsed: body.usage?.total_tokens ?? null };
+}
+
 export async function matchFormFields(
   formFields: FormFieldDescriptor[],
   availableDataKeys: string[],
@@ -62,33 +110,18 @@ Respond with ONLY a JSON object, no other text, matching exactly this shape:
 {"matches": [{"formFieldId": "<the field's id, copied exactly>", "dataKey": "<a key from the list above, or null>", "confidence": <number 0-1>}]}
 Include exactly one entry per form field listed above, in the same order.`;
 
-  const response = await fetch(GROQ_CHAT_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MATCH_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-      max_completion_tokens: 1024,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Groq request failed: ${response.status} ${await response.text()}`);
+  let lastError: Error = new Error("Groq match failed");
+  for (let attempt = 1; attempt <= MAX_MATCH_ATTEMPTS; attempt++) {
+    try {
+      const { content, tokensUsed } = await callGroqMatch(prompt, apiKey);
+      return { result: parseFieldMatchResult(content), tokensUsed };
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt === MAX_MATCH_ATTEMPTS || !isRetryableGroqError(lastError.message)) throw lastError;
+      await sleep(RETRY_DELAY_MS * attempt);
+    }
   }
-
-  const body = await response.json();
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Groq returned no content");
-
-  return {
-    result: parseFieldMatchResult(content),
-    tokensUsed: body.usage?.total_tokens ?? null,
-  };
+  throw lastError;
 }
 
 /**
