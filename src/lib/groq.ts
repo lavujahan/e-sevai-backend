@@ -4,10 +4,15 @@
 // session, ask Groq to map one to the other.
 
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
-// llama-3.1-8b-instant was decommissioned by Groq on 2026-08-16; this is
-// their own recommended replacement for that exact use case (small/fast
-// instant-tier chat model). See https://console.groq.com/docs/deprecations.
-const MATCH_MODEL = "openai/gpt-oss-20b";
+// llama-3.1-8b-instant was decommissioned by Groq on 2026-08-16, replaced
+// with openai/gpt-oss-20b (Groq's own recommended swap) -- but gpt-oss's
+// structured-output generation kept failing (json_validate_failed) even
+// after switching to json_object mode and adding retries, recurring
+// identically across all retry attempts. llama-3.3-70b-versatile is a
+// larger, far more established model that Groq confirms supports JSON
+// Object mode (same mode already in use here) -- slower/costlier per call,
+// negligible since this only runs once per unique form (cached after).
+const MATCH_MODEL = "llama-3.3-70b-versatile";
 
 export interface FormFieldDescriptor {
   id: string;
@@ -47,7 +52,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callGroqMatch(prompt: string, apiKey: string): Promise<{ content: string; tokensUsed: number | null }> {
+async function callGroqMatch(
+  prompt: string,
+  apiKey: string,
+  temperature: number,
+): Promise<{ content: string; tokensUsed: number | null }> {
   const response = await fetch(GROQ_CHAT_URL, {
     method: "POST",
     headers: {
@@ -57,7 +66,7 @@ async function callGroqMatch(prompt: string, apiKey: string): Promise<{ content:
     body: JSON.stringify({
       model: MATCH_MODEL,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
+      temperature,
       max_completion_tokens: 1024,
       response_format: { type: "json_object" },
     }),
@@ -79,10 +88,13 @@ export async function matchFormFields(
   availableDataKeys: string[],
   apiKey: string,
 ): Promise<GroqMatchCallResult> {
-  // A field the extension's deterministic detection couldn't find any label
-  // text for at all gets a "context" snippet instead (surrounding HTML) —
-  // give the model that raw context to infer purpose from, rather than
-  // just an empty label it has nothing to work with.
+  // Every field now carries a "context" HTML snippet alongside its
+  // extracted label (not just fields the label heuristic came up empty
+  // on) -- matching runs fresh via AI on every fill rather than being
+  // cached once per form, so giving the model real surrounding markup to
+  // judge each field's meaning from -- not just trusting a single
+  // extracted label string -- matters on every match, not only as a
+  // fallback for the unlabeled case.
   const fieldList = formFields
     .map((f) => {
       const base = `- id=${f.id}, label="${f.label}", type=${f.type}`;
@@ -104,7 +116,7 @@ The citizen data on file has these keys available:
 ${dataKeyList}
 
 For each form field, pick the single best-matching data key (or null if none fits) and a confidence 0-1.
-Some fields have no label — use their "context" (surrounding HTML) to infer what the field represents instead.
+Each field includes a "context" snippet of its surrounding HTML — use it to verify or correct the label and judge what the field truly represents, especially if the label looks ambiguous, wrong, or is missing entirely.
 
 Respond with ONLY a JSON object, no other text, matching exactly this shape:
 {"matches": [{"formFieldId": "<the field's id, copied exactly>", "dataKey": "<a key from the list above, or null>", "confidence": <number 0-1>}]}
@@ -113,7 +125,13 @@ Include exactly one entry per form field listed above, in the same order.`;
   let lastError: Error = new Error("Groq match failed");
   for (let attempt = 1; attempt <= MAX_MATCH_ATTEMPTS; attempt++) {
     try {
-      const { content, tokensUsed } = await callGroqMatch(prompt, apiKey);
+      // Low temperature (deterministic, best quality) on the first try; a
+      // retry that reused the exact same temperature would tend to
+      // reproduce the same failure rather than get a genuine second
+      // chance, since low-temperature sampling is close to deterministic.
+      // Bumping it on retries gives the model room to actually diverge.
+      const temperature = attempt === 1 ? 0.1 : 0.5;
+      const { content, tokensUsed } = await callGroqMatch(prompt, apiKey, temperature);
       return { result: parseFieldMatchResult(content), tokensUsed };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
