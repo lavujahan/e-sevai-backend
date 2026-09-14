@@ -4,21 +4,24 @@
 // session, ask Groq to map one to the other.
 
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
-// llama-3.1-8b-instant was decommissioned by Groq on 2026-08-16, replaced
-// with openai/gpt-oss-20b (Groq's own recommended swap) -- but gpt-oss's
+// llama-3.1-8b-instant was decommissioned by Groq on 2026-08-16. Tried
+// openai/gpt-oss-20b next (Groq's own recommended swap), but its
 // structured-output generation kept failing (json_validate_failed) even
-// after switching to json_object mode and adding retries, recurring
-// identically across all retry attempts. llama-3.3-70b-versatile is a
-// larger, far more established model that Groq confirms supports JSON
-// Object mode (same mode already in use here) -- slower/costlier per call,
-// negligible since this only runs once per unique form (cached after).
-const MATCH_MODEL = "llama-3.3-70b-versatile";
+// in json_object mode. Tried llama-3.3-70b-versatile after that, but it
+// 404s on this account: Groq's own model list confirms it's gated to
+// Enterprise-tier plans ("ContactSales" pricing) -- not a model-name typo,
+// this account's key simply isn't on that plan. Reverted to gpt-oss-20b,
+// the one model *confirmed* accessible on this account (it did return
+// successful matches before the JSON-reliability issue surfaced) --
+// relying on the retry + temperature-diversification logic below to
+// handle its flakiness rather than gambling on another untested model.
+const MATCH_MODEL = "openai/gpt-oss-20b";
 
 export interface FormFieldDescriptor {
   id: string;
   label: string;
   type: string;
-  /** Only present when the extension's deterministic label detection found nothing at all for this field. */
+  /** Surrounding HTML snippet, sent for every field now (not just unlabeled ones) -- see the extension's captureContext(). */
   context?: string;
 }
 
@@ -36,8 +39,16 @@ export interface GroqMatchCallResult {
 // repros on 400s from these models) -- this is model/provider-side
 // non-determinism, not something a request-shape change reliably
 // eliminates. A retry is the standard mitigation for that class of failure.
-const MAX_MATCH_ATTEMPTS = 3;
+// Matching now runs on every fill (not cached once per form), so this
+// tradeoff is deliberately modest: one extra attempt over the original 3,
+// not an aggressive retry count, since every attempt adds latency staff
+// wait on for every single fill now, not just a form's first-ever visit.
+const MAX_MATCH_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 300;
+// Progressively more diverse sampling per attempt, so a retry has a
+// genuinely different shot rather than repeating a near-deterministic
+// result at the same temperature as a prior failed attempt.
+const RETRY_TEMPERATURES = [0.1, 0.4, 0.6, 0.8];
 
 function isRetryableGroqError(message: string): boolean {
   return (
@@ -129,8 +140,9 @@ Include exactly one entry per form field listed above, in the same order.`;
       // retry that reused the exact same temperature would tend to
       // reproduce the same failure rather than get a genuine second
       // chance, since low-temperature sampling is close to deterministic.
-      // Bumping it on retries gives the model room to actually diverge.
-      const temperature = attempt === 1 ? 0.1 : 0.5;
+      // Progressively higher on each retry gives the model more room to
+      // actually diverge the longer a failure persists.
+      const temperature = RETRY_TEMPERATURES[attempt - 1] ?? RETRY_TEMPERATURES[RETRY_TEMPERATURES.length - 1];
       const { content, tokensUsed } = await callGroqMatch(prompt, apiKey, temperature);
       return { result: parseFieldMatchResult(content), tokensUsed };
     } catch (e) {
